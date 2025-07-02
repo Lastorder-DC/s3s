@@ -325,9 +325,10 @@ def get_gtoken(f_gen_url, session_token, ver):
 
 	# get access token
 	body = {}
+	url = "https://api-lp1.znc.srv.nintendo.net/v3/Account/Login"
 	try:
 		id_token = id_response["id_token"]
-		f, uuid, timestamp = call_f_api(f_parameter, id_token, 1, f_gen_url, user_id)
+		f, uuid, timestamp = call_f_api(url, f_parameter, id_token, 1, f_gen_url, user_id)
 
 		parameter = {
 			'f':          f,
@@ -357,7 +358,6 @@ def get_gtoken(f_gen_url, session_token, ver):
 		'User-Agent':       f'com.nintendo.znca/{nsoapp_version}(Android/14)',
 	}
 
-	url = "https://api-lp1.znc.srv.nintendo.net/v3/Account/Login"
 	r = requests.post(url, headers=app_head, json=body)
 	try:
 		splatoon_token = json.loads(r.text)
@@ -371,7 +371,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 	except:
 		# retry once if 9403/9599 error from nintendo
 		try:
-			f, uuid, timestamp = call_f_api(f_parameter, access_token, 1, f_gen_url, user_id)
+			f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 1, f_gen_url, user_id)
 			body["parameter"]["f"]         = f
 			body["parameter"]["requestId"] = uuid
 			body["parameter"]["timestamp"] = timestamp
@@ -387,7 +387,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 			print("Try re-running the script. Or, if the NSO app has recently been updated, you may temporarily change `USE_OLD_NSOAPP_VER` to True at the top of iksm.py for a workaround.")
 			sys.exit(1)
 
-		f, uuid, timestamp = call_f_api(f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
+		f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
 
 	# get web service token
 	app_head = {
@@ -423,7 +423,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 	except:
 		# retry once if 9403/9599 error from nintendo
 		try:
-			f, uuid, timestamp = call_f_api(f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
+			f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
 			body["parameter"]["f"]         = f
 			body["parameter"]["requestId"] = uuid
 			body["parameter"]["timestamp"] = timestamp
@@ -485,7 +485,7 @@ def get_bullet(web_service_token, app_user_agent, user_lang, user_country):
 	return bullet_token
 
 
-def call_f_api(f_parameter, access_token, step, f_gen_url, user_id, coral_user_id=None):
+def call_f_api(f_url, f_parameter, access_token, step, f_gen_url, user_id, coral_user_id=None):
 	'''Passes naIdToken & user ID to f generation API (default: imink) & fetches response (f token, UUID, timestamp).'''
 
 	url = 'https://nxapi-auth.fancy.org.uk/api/oauth/token'
@@ -522,7 +522,7 @@ def call_f_api(f_parameter, access_token, step, f_gen_url, user_id, coral_user_i
 			'hash_method': step, # 1 = coral (NSO) token, 2 = webservicetoken
 			'na_id':       user_id,
 			'encrypt_token_request': {
-				'url': 'https://api-lp1.znc.srv.nintendo.net/v3/Account/Login',
+				'url': f_url,
 				'parameter': f_parameter
 			}
 		}
