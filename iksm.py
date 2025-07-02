@@ -11,19 +11,20 @@ USE_OLD_NSOAPP_VER    = False # Change this to True if you're getting a "9403: I
 
 S3S_VERSION           = "unknown"
 NSOAPP_VERSION        = "unknown"
-NSOAPP_SUPPORTED      = "2.12.0"
+NSOAPP_SUPPORTED      = "3.0.2"
 NSOAPP_VER_FALLBACK   = NSOAPP_SUPPORTED
 WEB_VIEW_VERSION      = "unknown"
-WEB_VIEW_VER_FALLBACK = "6.0.0-30a1464a" # fallback for current splatnet 3 ver
+WEB_VIEW_VER_FALLBACK = "10.0.0-cba84fcd" # fallback for current splatnet 3 ver
 SPLATNET3_URL         = "https://api.lp1.av5ja.srv.nintendo.net"
 GRAPHQL_URL           = SPLATNET3_URL + "/api/graphql"
 F_GEN_URL             = "unknown"
+NXAPI_AUTH_CLIENT_ID  = "unknown"
 
 # functions in this file & call stack:
 # - get_nsoapp_version()
 # - get_web_view_ver()
 # - log_in() -> get_session_token()
-# - get_gtoken() -> call_f_api()
+# - () -> call_f_api()
 # - get_bullet()
 # - enter_tokens()
 
@@ -311,12 +312,21 @@ def get_gtoken(f_gen_url, session_token, ver):
 	user_lang     = user_info["language"]
 	user_country  = user_info["country"]
 	user_id       = user_info["id"]
-
 	# get access token
 	body = {}
+	url = "https://api-lp1.znc.srv.nintendo.net/v3/Account/Login"
 	try:
 		id_token = id_response["id_token"]
-		f, uuid, timestamp = call_f_api(id_token, 1, f_gen_url, user_id)
+		f_parameter = {
+			'f':          '',
+			'requestId':  '',
+			'timestamp':  0,
+			'language':   user_lang,
+			'naBirthday': user_info["birthday"],
+			'naCountry':  user_country,
+			'naIdToken':  id_token
+		}
+		f, uuid, timestamp = call_f_api(url, f_parameter, id_token, 1, f_gen_url, user_id)
 
 		parameter = {
 			'f':          f,
@@ -346,7 +356,6 @@ def get_gtoken(f_gen_url, session_token, ver):
 		'User-Agent':       f'com.nintendo.znca/{nsoapp_version}(Android/14)',
 	}
 
-	url = "https://api-lp1.znc.srv.nintendo.net/v3/Account/Login"
 	r = requests.post(url, headers=app_head, json=body)
 	try:
 		splatoon_token = json.loads(r.text)
@@ -360,7 +369,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 	except:
 		# retry once if 9403/9599 error from nintendo
 		try:
-			f, uuid, timestamp = call_f_api(access_token, 1, f_gen_url, user_id)
+			f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 1, f_gen_url, user_id)
 			body["parameter"]["f"]         = f
 			body["parameter"]["requestId"] = uuid
 			body["parameter"]["timestamp"] = timestamp
@@ -376,7 +385,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 			print("Try re-running the script. Or, if the NSO app has recently been updated, you may temporarily change `USE_OLD_NSOAPP_VER` to True at the top of iksm.py for a workaround.")
 			sys.exit(1)
 
-		f, uuid, timestamp = call_f_api(access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
+		f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
 
 	# get web service token
 	app_head = {
@@ -412,7 +421,7 @@ def get_gtoken(f_gen_url, session_token, ver):
 	except:
 		# retry once if 9403/9599 error from nintendo
 		try:
-			f, uuid, timestamp = call_f_api(access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
+			f, uuid, timestamp = call_f_api(url, f_parameter, access_token, 2, f_gen_url, user_id, coral_user_id=coral_user_id)
 			body["parameter"]["f"]         = f
 			body["parameter"]["requestId"] = uuid
 			body["parameter"]["timestamp"] = timestamp
@@ -474,12 +483,32 @@ def get_bullet(web_service_token, app_user_agent, user_lang, user_country):
 	return bullet_token
 
 
-def call_f_api(access_token, step, f_gen_url, user_id, coral_user_id=None):
+def call_f_api(f_url, f_parameter, access_token, step, f_gen_url, user_id, coral_user_id=None):
 	'''Passes naIdToken & user ID to f generation API (default: imink) & fetches response (f token, UUID, timestamp).'''
+
+	url = 'https://nxapi-auth.fancy.org.uk/api/oauth/token'
+	data = {
+		'grant_type': 'client_credentials',
+		'client_id': NXAPI_AUTH_CLIENT_ID,
+		'scope': 'ca:gf ca:er ca:dr'
+	}
+	headers = {
+		'Accept': 'application/json'
+	}
+
+	response = requests.post(url, data=data, headers=headers)
+
+	if response.ok:
+		token_data = response.json()
+		access_token = token_data.get('access_token')
+	else:
+		print("Error during f generation:", response.status_code, response.text)
+		sys.exit(1)
 
 	try:
 		nsoapp_version = get_nsoapp_version()
 		api_head = {
+			'Authorization':   f'Bearer {access_token}',
 			'User-Agent':      f's3s/{S3S_VERSION}',
 			'Content-Type':    'application/json; charset=utf-8',
 			'X-znca-Platform': 'Android',
@@ -489,7 +518,11 @@ def call_f_api(access_token, step, f_gen_url, user_id, coral_user_id=None):
 		api_body = { # 'timestamp' & 'request_id' (uuid v4) set automatically
 			'token':       access_token,
 			'hash_method': step, # 1 = coral (NSO) token, 2 = webservicetoken
-			'na_id':       user_id
+			'na_id':       user_id,
+			'encrypt_token_request': {
+				'url': f_url,
+				'parameter': f_parameter
+			}
 		}
 		if step == 2 and coral_user_id is not None:
 			api_body["coral_user_id"] = coral_user_id
